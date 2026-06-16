@@ -33,6 +33,10 @@ hace que ClamOnAcc bloquee el acceso a archivos detectados como malware dentro d
 
 El proyecto no borra malware automáticamente y no crea cuarentena automática por defecto.
 
+El instalador no añade `ScanOnAccess yes` al bloque del proyecto. Esa opción aparece como obsoleta en versiones modernas de ClamAV; ClamOnAcc se ejecuta mediante su servicio systemd y las rutas se definen con `OnAccessIncludePath`.
+
+El servicio systemd ejecuta `clamonacc` con `--foreground` para que systemd pueda seguir el proceso. Sin esa opción, `clamonacc` puede hacer fork al background y systemd puede mostrar el servicio como `inactive`.
+
 ## Rendimiento
 
 No se vigila `/`, todo `/home`, `/tmp`, `/var`, `/usr` ni rutas grandes del sistema. Vigilar todo el sistema en tiempo real puede consumir muchos recursos y causar falsos positivos operativos.
