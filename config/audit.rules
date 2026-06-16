@@ -1,0 +1,10 @@
+# Kubuntu Defender Lite audit rules.
+# These rules log sensitive changes. They normally do not block actions.
+
+-w /etc/passwd -p wa -k kubuntu-defender-lite-identity
+-w /etc/shadow -p wa -k kubuntu-defender-lite-identity
+-w /etc/group -p wa -k kubuntu-defender-lite-identity
+-w /etc/sudoers -p wa -k kubuntu-defender-lite-sudo
+-w /etc/sudoers.d/ -p wa -k kubuntu-defender-lite-sudo
+-w /etc/clamav/ -p wa -k kubuntu-defender-lite-clamav
+-w /etc/systemd/system/ -p wa -k kubuntu-defender-lite-systemd
