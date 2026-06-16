@@ -338,7 +338,6 @@ configure_clamd() {
   {
     echo
     echo "${MARKER_BEGIN}"
-    echo "ScanOnAccess yes"
     echo "OnAccessPrevention yes"
     echo "OnAccessExcludeUname clamav"
     echo "OnAccessMaxFileSize 100M"
@@ -354,15 +353,17 @@ configure_clamd() {
 
 configure_clamonacc_service() {
   echo "Instalando servicio systemd de ClamOnAcc..."
+  [[ -x /usr/sbin/clamonacc ]] || fail "no existe /usr/sbin/clamonacc. Revisa la instalación de clamav-daemon."
   sudo install -o root -g root -m 0644 "${SCRIPT_DIR}/config/clamonacc.service" /etc/systemd/system/clamonacc.service
   sudo systemctl daemon-reload
   sudo systemctl enable --now clamav-daemon
   sudo systemctl restart clamav-daemon
+  sudo systemctl reset-failed clamonacc 2>/dev/null || true
   sudo systemctl enable --now clamonacc
 
   echo "Estado de clamonacc:"
-  if ! sudo systemctl status clamonacc --no-pager; then
-    echo "Aviso: clamonacc no aparece activo. Revisa los mensajes anteriores y /var/log/clamav/clamonacc.log."
+  if ! sudo systemctl status clamonacc --no-pager -l; then
+    echo "Aviso: clamonacc no aparece activo. Revisa con: sudo journalctl -u clamonacc -n 80 --no-pager"
   fi
 }
 

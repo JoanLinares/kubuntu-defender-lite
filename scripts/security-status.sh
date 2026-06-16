@@ -28,6 +28,30 @@ service_state() {
   printf "%-22s activo: %-12s habilitado: %s\n" "${service}" "${active}" "${enabled}"
 }
 
+print_clamonacc_hint() {
+  local active=""
+
+  if ! systemctl list-unit-files clamonacc.service >/dev/null 2>&1; then
+    return
+  fi
+
+  active="$(systemctl is-active clamonacc.service 2>/dev/null || true)"
+  if [[ "${active}" == "active" ]]; then
+    return
+  fi
+
+  cat <<'EOF'
+
+Aviso ClamOnAcc:
+clamonacc no está active, así que la protección en tiempo real no está funcionando ahora mismo.
+Revisa:
+  sudo systemctl status clamonacc --no-pager -l
+  sudo journalctl -u clamonacc -n 80 --no-pager
+
+En Kubuntu 26.04/ClamAV moderno el servicio debe ejecutar clamonacc con --foreground.
+EOF
+}
+
 print_ufw() {
   echo
   echo "UFW"
@@ -125,6 +149,7 @@ service_state "clamav-freshclam"
 service_state "clamav-daemon"
 service_state "clamonacc"
 service_state "auditd"
+print_clamonacc_hint
 
 print_apparmor
 print_latest_lynis_log

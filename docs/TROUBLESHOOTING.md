@@ -41,6 +41,41 @@ Para buscar detecciones:
 sudo grep -Ei "FOUND|Infected files|virus|malware|OnAccess" /var/log/clamav/*.log
 ```
 
+## Si ClamOnAcc aparece como inactive
+
+La protección en tiempo real no está funcionando mientras `clamonacc` esté `inactive`. Revisa primero el error exacto:
+
+```bash
+sudo systemctl status clamonacc --no-pager -l
+sudo journalctl -u clamonacc -n 80 --no-pager
+systemctl status clamav-daemon --no-pager -l
+ls -l /var/run/clamav/
+```
+
+En Kubuntu 26.04 y ClamAV moderno, el servicio del proyecto debe arrancar `clamonacc` en primer plano:
+
+```text
+ExecStart=/usr/sbin/clamonacc --foreground --fdpass --log=/var/log/clamav/clamonacc.log
+```
+
+Si el servicio no tiene `--foreground`, systemd puede marcarlo como `inactive` porque `clamonacc` hace fork al background.
+
+Si ves un aviso como `Ignoring deprecated option ScanOnAccess`, revisa el bloque del proyecto:
+
+```bash
+sudo grep -n "ScanOnAccess\|OnAccess\|KUBUNTU-DEFENDER-LITE" /etc/clamav/clamd.conf
+```
+
+El bloque `KUBUNTU-DEFENDER-LITE` no debe contener `ScanOnAccess yes`. Las líneas esperadas son `OnAccessIncludePath`, `OnAccessPrevention yes`, `OnAccessExcludeUname clamav` y `OnAccessMaxFileSize 100M`.
+
+Después de corregir el bloque o volver a ejecutar el instalador actualizado:
+
+```bash
+sudo systemctl restart clamav-daemon
+sudo systemctl restart clamonacc
+./scripts/security-status.sh
+```
+
 ## Si ClamOnAcc consume demasiados recursos
 
 Comprueba qué rutas están en el bloque `KUBUNTU-DEFENDER-LITE` de:
