@@ -41,6 +41,63 @@ Para buscar detecciones:
 sudo grep -Ei "FOUND|Infected files|virus|malware|OnAccess" /var/log/clamav/*.log
 ```
 
+## Notificaciones de detecciones
+
+El servicio de notificaciones es un servicio de usuario systemd:
+
+```bash
+systemctl --user status kubuntu-defender-lite-notify.service --no-pager
+```
+
+Para comprobar que KDE muestra notificaciones:
+
+```bash
+notify-send "Kubuntu Defender Lite" "Prueba de notificación"
+```
+
+Si no aparece la notificación en KDE/Wayland:
+
+* Comprueba que `libnotify-bin` está instalado.
+* Ejecuta la prueba `notify-send` dentro de tu sesión gráfica, no desde una TTY.
+* Revisa que el servicio de usuario está activo.
+* Revisa el log local:
+
+```bash
+cat ~/.local/share/kubuntu-defender-lite/notify-state/notify.log
+```
+
+El servicio solo avisa. No borra ni mueve archivos.
+
+## Revisar detecciones y cuarentena
+
+Revisar detecciones:
+
+```bash
+./scripts/review-detections.sh
+```
+
+Ver cuarentena:
+
+```bash
+ls -lh ~/.local/share/kubuntu-defender-lite/quarantine/
+```
+
+Borrar manualmente archivos de cuarentena:
+
+```bash
+./scripts/delete-quarantine-files.sh
+```
+
+Si un archivo detectado ya no existe, `review-detections.sh` lo mostrará como "ya no existe" y no lo moverá.
+
+Si un archivo no se puede mover por permisos, ejecuta de nuevo:
+
+```bash
+sudo ./scripts/review-detections.sh
+```
+
+El script detecta el usuario normal con `SUDO_USER` y no pide ni guarda contraseñas manualmente.
+
 ## Si ClamOnAcc aparece como inactive
 
 La protección en tiempo real no está funcionando mientras `clamonacc` esté `inactive`. Revisa primero el error exacto:

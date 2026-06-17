@@ -1,0 +1,12 @@
+[Unit]
+Description=Kubuntu Defender Lite ClamAV desktop notifications
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/lib/kubuntu-defender-lite/scripts/clamav-detection-notify.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
