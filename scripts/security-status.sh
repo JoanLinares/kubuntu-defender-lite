@@ -30,6 +30,22 @@ service_state() {
   printf "%-22s activo: %-12s habilitado: %s\n" "${service}" "${active}" "${enabled}"
 }
 
+timer_state() {
+  local timer="$1"
+  local active="no instalado"
+  local enabled="no instalado"
+  local next_run="no instalado"
+
+  if systemctl list-unit-files "${timer}.timer" >/dev/null 2>&1; then
+    active="$(systemctl is-active "${timer}.timer" 2>/dev/null || true)"
+    enabled="$(systemctl is-enabled "${timer}.timer" 2>/dev/null || true)"
+    next_run="$(systemctl list-timers "${timer}.timer" --no-pager --no-legend 2>/dev/null | awk '{print $1" "$2" "$3" "$4}' || true)"
+    [[ -z "${next_run}" ]] && next_run="sin próxima ejecución"
+  fi
+
+  printf "%-22s activo: %-12s habilitado: %-10s próxima: %s\n" "${timer}.timer" "${active}" "${enabled}" "${next_run}"
+}
+
 user_service_state() {
   local service="$1"
   local active="no instalado"
@@ -224,6 +240,7 @@ service_state "clamav-freshclam"
 service_state "clamav-daemon"
 service_state "clamonacc"
 user_service_state "kubuntu-defender-lite-notify"
+timer_state "kubuntu-defender-lite-lynis"
 service_state "auditd"
 print_clamonacc_hint
 
