@@ -11,6 +11,7 @@ PACKAGES=(
   clamav
   clamav-daemon
   clamtk
+  libnotify-bin
   auditd
   audispd-plugins
   apparmor-utils
@@ -21,6 +22,8 @@ TARGET_USER=""
 TARGET_HOME=""
 TARGET_GROUP=""
 LOG_DIR=""
+QUARANTINE_DIR=""
+QUARANTINE_LOG=""
 SUDO_KEEPALIVE_PID=""
 
 cleanup() {
@@ -91,7 +94,20 @@ validate_user() {
   TARGET_HOME="${home}"
   TARGET_GROUP="$(id -gn "${TARGET_USER}")"
   LOG_DIR="${TARGET_HOME}/.local/share/${PROJECT_NAME}/logs"
+  QUARANTINE_DIR="${TARGET_HOME}/.local/share/${PROJECT_NAME}/quarantine"
+  QUARANTINE_LOG="${QUARANTINE_DIR}/quarantine.log"
   return 0
+}
+
+run_target_user_systemctl() {
+  local uid
+  uid="$(id -u "${TARGET_USER}")"
+
+  if [[ "$(id -un)" == "${TARGET_USER}" && -n "${XDG_RUNTIME_DIR:-}" ]]; then
+    systemctl --user "$@"
+  else
+    sudo -u "${TARGET_USER}" XDG_RUNTIME_DIR="/run/user/${uid}" systemctl --user "$@"
+  fi
 }
 
 select_target_user() {
@@ -162,6 +178,16 @@ reload_audit_rules() {
 remove_project_services() {
   echo "Desactivando servicios y timers del proyecto..."
 
+  if [[ -f "${TARGET_HOME}/.config/systemd/user/kubuntu-defender-lite-notify.service" ]]; then
+    run_target_user_systemctl disable --now kubuntu-defender-lite-notify.service 2>/dev/null || true
+    sudo rm -f "${TARGET_HOME}/.config/systemd/user/default.target.wants/kubuntu-defender-lite-notify.service"
+    sudo rm -f "${TARGET_HOME}/.config/systemd/user/kubuntu-defender-lite-notify.service"
+    sudo rm -f "${TARGET_HOME}/.local/lib/${PROJECT_NAME}/scripts/clamav-detection-notify.sh"
+    sudo rmdir "${TARGET_HOME}/.local/lib/${PROJECT_NAME}/scripts" 2>/dev/null || true
+    sudo rmdir "${TARGET_HOME}/.local/lib/${PROJECT_NAME}" 2>/dev/null || true
+    run_target_user_systemctl daemon-reload 2>/dev/null || true
+  fi
+
   sudo systemctl disable --now clamonacc.service 2>/dev/null || true
   sudo rm -f /etc/systemd/system/clamonacc.service
 
@@ -175,6 +201,33 @@ remove_project_services() {
   sudo rmdir /usr/local/lib/kubuntu-defender-lite 2>/dev/null || true
 
   sudo systemctl daemon-reload
+}
+
+remove_quarantine_if_requested() {
+  if [[ ! -d "${QUARANTINE_DIR}" ]]; then
+    echo "No hay directorio de cuarentena en ${QUARANTINE_DIR}."
+    return 0
+  fi
+
+  if ask_yes_no "¿Quieres borrar los archivos en cuarentena? [s/N]" "no"; then
+    sudo find "${QUARANTINE_DIR}" -mindepth 1 -maxdepth 1 -type f ! -name 'quarantine.log' -delete
+    echo "Archivos de cuarentena borrados."
+  else
+    echo "Archivos de cuarentena conservados en ${QUARANTINE_DIR}."
+  fi
+
+  if [[ -f "${QUARANTINE_LOG}" ]]; then
+    if ask_yes_no "¿Quieres borrar quarantine.log? [s/N]" "no"; then
+      sudo rm -f -- "${QUARANTINE_LOG}"
+      echo "quarantine.log borrado."
+    else
+      echo "quarantine.log conservado en ${QUARANTINE_LOG}."
+    fi
+  fi
+
+  sudo rmdir "${QUARANTINE_DIR}" 2>/dev/null || true
+  sudo rmdir "${TARGET_HOME}/.local/share/${PROJECT_NAME}/notify-state" 2>/dev/null || true
+  sudo rmdir "${TARGET_HOME}/.local/share/${PROJECT_NAME}" 2>/dev/null || true
 }
 
 remove_audit_rules() {
@@ -219,6 +272,7 @@ Se eliminarán solo cambios creados por ${PROJECT_NAME}:
 * /etc/systemd/system/kubuntu-defender-lite-lynis.service
 * /etc/systemd/system/kubuntu-defender-lite-lynis.timer
 * /usr/local/lib/kubuntu-defender-lite/scripts/lynis-monthly-audit.sh
+* servicio de usuario kubuntu-defender-lite-notify.service
 * /etc/audit/rules.d/kubuntu-defender-lite.rules
 
 No se borrarán archivos personales.
@@ -248,6 +302,7 @@ main() {
   remove_clamd_block
   restart_clamav_daemon
   remove_audit_rules
+  remove_quarantine_if_requested
   remove_logs_if_requested
   remove_packages_if_requested
 

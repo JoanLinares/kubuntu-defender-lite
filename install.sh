@@ -80,6 +80,7 @@ set_common_package_profile() {
     clamav
     clamav-daemon
     clamtk
+    libnotify-bin
     auditd
     audispd-plugins
     apparmor-utils
@@ -240,6 +241,7 @@ Paquetes a instalar:
 * clamav
 * clamav-daemon
 * clamtk
+* libnotify-bin
 * auditd
 * audispd-plugins
 * apparmor-utils
@@ -250,6 +252,7 @@ Servicios a activar:
 * clamav-freshclam
 * clamav-daemon
 * clamonacc
+* kubuntu-defender-lite-notify (servicio de usuario)
 * auditd
 
 Configuraciones a modificar:
@@ -279,6 +282,19 @@ ensure_directories() {
   fi
 
   sudo install -d -o "${TARGET_USER}" -g "${TARGET_GROUP}" -m 0750 "${LOG_DIR}"
+  sudo install -d -o "${TARGET_USER}" -g "${TARGET_GROUP}" -m 0700 "${TARGET_HOME}/.local/share/${PROJECT_NAME}/quarantine"
+  sudo install -d -o "${TARGET_USER}" -g "${TARGET_GROUP}" -m 0700 "${TARGET_HOME}/.local/share/${PROJECT_NAME}/notify-state"
+
+  if [[ ! -e "${TARGET_HOME}/.local/share/${PROJECT_NAME}/quarantine/quarantine.log" ]]; then
+    sudo -u "${TARGET_USER}" touch "${TARGET_HOME}/.local/share/${PROJECT_NAME}/quarantine/quarantine.log"
+  fi
+  sudo chown "${TARGET_USER}:${TARGET_GROUP}" "${TARGET_HOME}/.local/share/${PROJECT_NAME}/quarantine/quarantine.log"
+  sudo chmod 600 "${TARGET_HOME}/.local/share/${PROJECT_NAME}/quarantine/quarantine.log"
+
+  chmod +x \
+    "${SCRIPT_DIR}/scripts/review-detections.sh" \
+    "${SCRIPT_DIR}/scripts/delete-quarantine-files.sh" \
+    "${SCRIPT_DIR}/scripts/clamav-detection-notify.sh"
 }
 
 configure_ufw() {
@@ -440,6 +456,53 @@ EOF
   sudo systemctl enable --now kubuntu-defender-lite-lynis.timer
 }
 
+run_target_user_systemctl() {
+  local uid
+  uid="$(id -u "${TARGET_USER}")"
+
+  if [[ "$(id -un)" == "${TARGET_USER}" && -n "${XDG_RUNTIME_DIR:-}" ]]; then
+    systemctl --user "$@"
+  else
+    sudo -u "${TARGET_USER}" XDG_RUNTIME_DIR="/run/user/${uid}" systemctl --user "$@"
+  fi
+}
+
+enable_notify_service_fallback() {
+  local user_unit_dir="${TARGET_HOME}/.config/systemd/user"
+  local wants_dir="${user_unit_dir}/default.target.wants"
+
+  sudo install -d -o "${TARGET_USER}" -g "${TARGET_GROUP}" -m 0755 "${wants_dir}"
+  sudo ln -sfn "../kubuntu-defender-lite-notify.service" "${wants_dir}/kubuntu-defender-lite-notify.service"
+  sudo chown -h "${TARGET_USER}:${TARGET_GROUP}" "${wants_dir}/kubuntu-defender-lite-notify.service" 2>/dev/null || true
+}
+
+configure_notify_service() {
+  echo "Instalando servicio de usuario para notificaciones de ClamAV..."
+
+  local helper_dir="${TARGET_HOME}/.local/lib/${PROJECT_NAME}/scripts"
+  local user_unit_dir="${TARGET_HOME}/.config/systemd/user"
+
+  sudo install -d -o "${TARGET_USER}" -g "${TARGET_GROUP}" -m 0755 "${helper_dir}"
+  sudo install -d -o "${TARGET_USER}" -g "${TARGET_GROUP}" -m 0755 "${user_unit_dir}"
+  sudo install -o "${TARGET_USER}" -g "${TARGET_GROUP}" -m 0755 "${SCRIPT_DIR}/scripts/clamav-detection-notify.sh" "${helper_dir}/clamav-detection-notify.sh"
+  sudo install -o "${TARGET_USER}" -g "${TARGET_GROUP}" -m 0644 "${SCRIPT_DIR}/config/kubuntu-defender-lite-notify.service" "${user_unit_dir}/kubuntu-defender-lite-notify.service"
+
+  if run_target_user_systemctl daemon-reload; then
+    if ! run_target_user_systemctl enable kubuntu-defender-lite-notify.service; then
+      enable_notify_service_fallback
+    fi
+    if ! run_target_user_systemctl restart kubuntu-defender-lite-notify.service; then
+      echo "Aviso: no se pudo iniciar ahora el servicio de notificaciones."
+      echo "Se intentará iniciar al entrar en la sesión de KDE. También puedes probar:"
+      echo "  systemctl --user restart kubuntu-defender-lite-notify.service"
+    fi
+  else
+    enable_notify_service_fallback
+    echo "Aviso: no se pudo contactar con systemd de usuario."
+    echo "El servicio queda instalado en ${user_unit_dir}/kubuntu-defender-lite-notify.service"
+  fi
+}
+
 print_final_status() {
   cat <<EOF
 
@@ -453,10 +516,18 @@ Resumen:
 * auditd registra cambios sensibles; normalmente no bloquea.
 * AppArmor se ha comprobado sin cambiar perfiles agresivamente.
 * Lynis queda programado una vez al mes con systemd timer.
+* Las notificaciones de detecciones se gestionan con un servicio de usuario systemd.
+* Cuarentena manual: ${TARGET_HOME}/.local/share/${PROJECT_NAME}/quarantine
 * Logs de Lynis: ${LOG_DIR}
 
 Comprueba el estado con:
   ./scripts/security-status.sh
+
+Para revisar detecciones y decidir si mover archivos:
+  ./scripts/review-detections.sh
+
+Para borrar archivos ya movidos a cuarentena:
+  ./scripts/delete-quarantine-files.sh
 EOF
 
   echo
@@ -491,6 +562,7 @@ main() {
   configure_auditd
   check_apparmor
   configure_lynis_timer
+  configure_notify_service
   print_final_status
 }
 

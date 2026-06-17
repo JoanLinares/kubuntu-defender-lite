@@ -9,6 +9,7 @@ No es un EDR empresarial, no es un SIEM, no instala Wazuh ni OpenEDR, no añade 
 * `ufw` y `gufw` para firewall básico.
 * `clamav`, `clamav-daemon` y `clamtk` para antivirus.
 * ClamOnAcc para protección en tiempo real limitada.
+* `libnotify-bin` y un servicio de usuario systemd para avisos de escritorio.
 * `auditd` y `audispd-plugins` para registrar cambios sensibles.
 * `apparmor-utils` para comprobar AppArmor.
 * `lynis` con un timer mensual de systemd.
@@ -111,6 +112,90 @@ Antes de modificar el sistema, el instalador muestra un resumen y pregunta:
 ```bash
 ./scripts/security-status.sh
 ```
+
+## Detecciones, cuarentena y borrado manual
+
+Flujo esperado:
+
+1. ClamOnAcc detecta malware.
+2. `OnAccessPrevention yes` bloquea el acceso.
+3. El sistema muestra una notificación en Kubuntu.
+4. Ejecutas:
+
+```bash
+./scripts/review-detections.sh
+```
+
+5. El script muestra una lista numerada de detecciones con rutas usando `->`.
+6. Puedes escribir números separados por comas o espacios:
+
+```text
+1,2,3,5,10
+```
+
+7. Los archivos seleccionados se mueven a:
+
+```text
+~/.local/share/kubuntu-defender-lite/quarantine/
+```
+
+8. Para borrar archivos ya movidos a cuarentena:
+
+```bash
+./scripts/delete-quarantine-files.sh
+```
+
+Ejemplos:
+
+```bash
+./scripts/review-detections.sh
+```
+
+Mover detecciones a cuarentena:
+
+```text
+1,2,3,5,10
+```
+
+No mover nada:
+
+```text
+0
+```
+
+Borrar archivos de cuarentena:
+
+```bash
+./scripts/delete-quarantine-files.sh
+```
+
+Borrar algunos:
+
+```text
+1,3,5
+```
+
+Borrar todos:
+
+```text
+ALL
+```
+
+Confirmación final para borrar todos:
+
+```text
+BORRAR
+```
+
+No hay borrado automático. No hay cuarentena automática sin confirmación. La notificación solo avisa. `review-detections.sh` mueve a cuarentena solo si eliges números de la lista. `delete-quarantine-files.sh` borra definitivamente solo con confirmación.
+
+La cuarentena está en:
+
+```text
+~/.local/share/kubuntu-defender-lite/quarantine/
+```
+
+Si un archivo estaba en un USB y eliges moverlo, se moverá desde el USB a la carpeta local de cuarentena. Si el archivo ya no existe cuando revisas detecciones, se mostrará como "ya no existe" y no se moverá. ClamAV puede tener falsos positivos, por eso este proyecto no borra automáticamente.
 
 ## Escanear una carpeta manualmente
 

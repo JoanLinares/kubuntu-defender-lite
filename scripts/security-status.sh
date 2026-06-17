@@ -14,6 +14,8 @@ if [[ -z "${TARGET_HOME}" ]]; then
 fi
 
 LOG_DIR="${TARGET_HOME}/.local/share/${PROJECT_NAME}/logs"
+QUARANTINE_DIR="${TARGET_HOME}/.local/share/${PROJECT_NAME}/quarantine"
+NOTIFY_SERVICE_PATH="${TARGET_HOME}/.config/systemd/user/kubuntu-defender-lite-notify.service"
 
 service_state() {
   local service="$1"
@@ -23,6 +25,39 @@ service_state() {
   if systemctl list-unit-files "${service}.service" >/dev/null 2>&1; then
     active="$(systemctl is-active "${service}.service" 2>/dev/null || true)"
     enabled="$(systemctl is-enabled "${service}.service" 2>/dev/null || true)"
+  fi
+
+  printf "%-22s activo: %-12s habilitado: %s\n" "${service}" "${active}" "${enabled}"
+}
+
+user_service_state() {
+  local service="$1"
+  local active="no instalado"
+  local enabled="no instalado"
+  local uid
+  local current_user
+  local can_sudo="no"
+
+  if [[ ! -f "${NOTIFY_SERVICE_PATH}" ]]; then
+    printf "%-22s activo: %-12s habilitado: %s\n" "${service}" "${active}" "${enabled}"
+    return
+  fi
+
+  uid="$(id -u "${TARGET_USER}" 2>/dev/null || true)"
+  current_user="$(id -un 2>/dev/null || true)"
+  if sudo -n true 2>/dev/null; then
+    can_sudo="yes"
+  fi
+
+  if [[ "${current_user}" == "${TARGET_USER}" && -n "${XDG_RUNTIME_DIR:-}" ]]; then
+    active="$(systemctl --user is-active "${service}.service" 2>/dev/null || true)"
+    enabled="$(systemctl --user is-enabled "${service}.service" 2>/dev/null || true)"
+  elif [[ -n "${uid}" && -d "/run/user/${uid}" && "${can_sudo}" == "yes" ]]; then
+    active="$(sudo -u "${TARGET_USER}" XDG_RUNTIME_DIR="/run/user/${uid}" systemctl --user is-active "${service}.service" 2>/dev/null || true)"
+    enabled="$(sudo -u "${TARGET_USER}" XDG_RUNTIME_DIR="/run/user/${uid}" systemctl --user is-enabled "${service}.service" 2>/dev/null || true)"
+  else
+    active="instalado"
+    enabled="sin consulta"
   fi
 
   printf "%-22s activo: %-12s habilitado: %s\n" "${service}" "${active}" "${enabled}"
@@ -138,6 +173,46 @@ print_log_matches() {
   fi
 }
 
+count_found_in_log() {
+  local file="$1"
+  local lines=""
+
+  if [[ ! -e "${file}" ]]; then
+    echo 0
+    return
+  fi
+
+  if [[ -r "${file}" ]]; then
+    lines="$(tail -n 300 "${file}" 2>/dev/null || true)"
+  elif sudo -n true 2>/dev/null; then
+    lines="$(sudo tail -n 300 "${file}" 2>/dev/null || true)"
+  else
+    echo 0
+    return
+  fi
+
+  printf "%s\n" "${lines}" | grep -F "FOUND" | wc -l
+}
+
+print_quarantine_status() {
+  local count=0
+  local clamav_count=0
+  local clamonacc_count=0
+
+  if [[ -d "${QUARANTINE_DIR}" ]]; then
+    count="$(find "${QUARANTINE_DIR}" -mindepth 1 -maxdepth 1 -type f ! -name 'quarantine.log' 2>/dev/null | wc -l)"
+  fi
+
+  clamav_count="$(count_found_in_log "/var/log/clamav/clamav.log")"
+  clamonacc_count="$(count_found_in_log "/var/log/clamav/clamonacc.log")"
+
+  echo
+  echo "Cuarentena"
+  echo "Ruta: ${QUARANTINE_DIR}"
+  echo "Archivos en cuarentena: ${count}"
+  echo "Detecciones recientes en logs: $((clamav_count + clamonacc_count))"
+}
+
 echo "Kubuntu Defender Lite - estado de seguridad"
 echo "Usuario detectado: ${TARGET_USER}"
 
@@ -148,10 +223,12 @@ echo "Servicios"
 service_state "clamav-freshclam"
 service_state "clamav-daemon"
 service_state "clamonacc"
+user_service_state "kubuntu-defender-lite-notify"
 service_state "auditd"
 print_clamonacc_hint
 
 print_apparmor
 print_latest_lynis_log
+print_quarantine_status
 print_log_matches "/var/log/clamav/clamav.log" "Detecciones ClamAV"
 print_log_matches "/var/log/clamav/clamonacc.log" "Detecciones ClamOnAcc"
